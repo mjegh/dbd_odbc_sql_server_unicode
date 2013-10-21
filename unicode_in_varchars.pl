@@ -105,14 +105,18 @@ print "Code page for column collation: ", $r->[0], "\n";
 # Latin Small Letter F with hook (U+192), dagger (U+2020)
 # mixing code pages in SQL Server is not recommended
 my $insert = $h->prepare(q/insert into varchar_test (a) values(?)/);
-# we force DBD::ODBC to insert the parameter as SQL_WVARCHAR
-# because otherwise, it discovers the column is VARCHAR and simply
-# inserts the UTF-8 encoded string stored in the perl scalar.
-$insert->bind_param(1, undef, {TYPE => SQL_WVARCHAR});
 my $data = "\x{20ac}\x{201A}\x{192}\x{2020}\x{187}" ;
+# this execute will discover the column is varchar and bind the perl scalar
+# as SQL_CHAR meaning the UTF-8 encoded data in the perl scalar
+# will be inserted as separate characters not all of which will even
+# be translateable to the current codepage.
+$insert->execute($data);
+# Now we force DBD::ODBC to insert the parameter as SQL_WVARCHAR
+$insert->bind_param(1, undef, {TYPE => SQL_WVARCHAR});
 $insert->execute($data);
 
-print "\nNotice how in the output following the last character is a ?. That is because U+0187 does not exist in windows-1252 codepage our column is using\n";
+print "\nNotice in the first row, the UTF-8 stored in the perl scalar is mostly stored as individual characters but then you will be wondering why the few of the characters seem to come back as unicode. Windows sees individual characters in the UTF-8 sequence as characters in the windows-1252 codepage and the UTF-8 sequence contains some characters in windows-1252 which map back to unicode chrs. e.g., the UTF-8 sequence for the euro is e2, 82, ac and windows see the 82 as the curved quotes in windows-1252 but when you ask for it back as wide/unicode characters it can map it to U+201a\n";
+print "\nNotice how in the second row the last character is a ?. That is because U+0187 does not exist in windows-1252 codepage our column is using\n";
 $r = $h->selectall_arrayref(q/select a from varchar_test/);
 print Dumper($r);
 foreach my $row (@$r) {
