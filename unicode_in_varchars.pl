@@ -5,6 +5,12 @@
 # If a conversion does not exist in the codepage the characters which don't
 # convert will be '?'
 #
+# Show the diference between binding as SQL_CHAR and SQL_WCHAR.
+#
+# See http://msdn.microsoft.com/en-us/library/bb330962.aspx#intlftrql2005_topic2
+# Also contains a load of code for getting codepage info that probably
+# wants moving elsewhere eventually.
+#
 use 5.008.001;
 use strict;
 use warnings;
@@ -122,5 +128,17 @@ print Dumper($r);
 foreach my $row (@$r) {
     print $row->[0], "\n";
 }
+
+# From MS docs:
+#When Unicode data must be inserted into non-Unicode columns, the columns are internally converted from Unicode by using the WideCharToMultiByte API and the code page associated with the collation. If a character cannot be represented on the given code page, the character is replaced by a question mark (?). Therefore, the appearance of random question marks within your data is a good indication that your data has been corrupted due to unspecified conversion. It also is a good indication that your application could benefit from conversion to a Unicode data type.
+
+# also, in older versions of ms sql server (before surrogate pairs were supported properly)
+#
+# When working with supplementary characters in SQL Server, remember the following points:
+#
+#    Because surrogate pairs are considered to be two separate Unicode code points, the size of nvarchar(n) needs to be 2 to hold a single supplementary character (in other words, space for a surrogate pair).
+#    Supplementary characters are not supported for use in metadata, such as in names of database objects. In general, text used in metadata must meet the rules for identifiers. For more information, see Identifiers in SQL Server 2005 Books Online.
+#    Standard string operations are not aware of supplementary characters. Operations such as SUBSTRING(nvarchar(2),1,1) return only the high surrogate of the supplementary character's surrogate pair. The LEN function returns the count of two characters for every supplementary character encountered: one for the high surrogate and one for the low surrogate. However, you can create custom functions that are aware of supplementary characters. The StringManipulate sample in Supplementary-Aware String Manipulation, in SQL Server 2005 Books Online, demonstrates how to create such functions.
+#    Sorting and searching behavior for supplementary characters may change depending on the collation. In the new 90_and BIN2 collations, supplementary characters are correctly compared, whereas, in older collations and standard Windows collations, all supplementary characters compare equal to all other supplementary characters. For example, the default Japanese and Korean collations do not handle supplementary characters, whereas Japanese_90 and Korean_90 do.
 
 $h->disconnect;
