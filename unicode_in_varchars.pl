@@ -48,6 +48,15 @@ $h->do(q/create table varchar_test(a varchar(20) collate Latin1_General_CI_AS)/)
 # mixing code pages in SQL Server is not recommended
 my $insert = $h->prepare(q/insert into varchar_test (a) values(?)/);
 my $data = "\x{20ac}\x{201A}\x{192}\x{2020}\x{187}" ;
+{
+    use bytes;
+    print "encoded length of our data is:", length($data), "\n";
+    print "encoded data in hex is:";
+    foreach my $b(split(//, $data)) {
+        print sprintf("%x,", ord($b));
+    }
+    print "\n";
+}
 # this execute will discover the column is varchar and bind the perl scalar
 # as SQL_CHAR meaning the UTF-8 encoded data in the perl scalar
 # will be inserted as separate characters not all of which will even
@@ -57,7 +66,7 @@ $insert->execute($data);
 $insert->bind_param(1, undef, {TYPE => SQL_WVARCHAR});
 $insert->execute($data);
 
-print "\nNotice in the first row, the UTF-8 stored in the perl scalar is mostly stored as individual characters but then you will be wondering why the few of the characters seem to come back as unicode. Windows sees individual characters in the UTF-8 sequence as characters in the windows-1252 codepage and the UTF-8 sequence contains some characters in windows-1252 which map back to unicode chrs. e.g., the UTF-8 sequence for the euro is e2, 82, ac and windows see the 82 as the curved quotes in windows-1252 but when you ask for it back as wide/unicode characters it can map it to U+201a\n";
+print "\nNotice in the first row (which was inserted as SQL_CHAR), the UTF-8 stored in the perl scalar is mostly stored as individual characters but then you will be wondering why the few of the characters seem to come back as unicode. Windows sees individual characters in the UTF-8 sequence as characters in the windows-1252 codepage and the UTF-8 sequence contains some characters in windows-1252 which map back to unicode chrs. e.g., the UTF-8 sequence for the euro is e2, 82, ac and windows see the 82 as the curved quotes in windows-1252 but when you ask for it back as wide/unicode characters it maps it to U+201a (curved quotes unicode point)\n";
 print "\nNotice how in the second row the last character is a ?. That is because U+0187 does not exist in windows-1252 codepage our column is using\n";
 my $r = $h->selectall_arrayref(q/select a from varchar_test/);
 print Dumper($r);
