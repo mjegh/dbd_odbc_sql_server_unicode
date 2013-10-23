@@ -673,3 +673,17 @@ or surrogate-aware:
   }
   $h->disconnect;
   </code>
+
+=head2 References
+
+How do I insert Unicode supplementary characters into SQL Server from Perl?
+http://www.easysoft.com/support/kb/kb01043.html
+
+List of Unicode characters
+https://en.wikipedia.org/wiki/List_of_Unicode_characters#Latin-1_Supplement
+
+Windows-1252
+https://en.wikipedia.org/wiki/Windows-1252
+
+International Features in Microsoft SQL Server 2005
+http://msdn.microsoft.com/en-us/library/bb330962.aspx#intlftrql2005_topic2
