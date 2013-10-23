@@ -376,6 +376,14 @@ but only if it is a decimal or a timestamp.
 
 Don't do this.
 
+Generally speaking you should use nchar/nvarchar when you need to
+support multiple languages in the same column although even that isn't
+always necessary e.g., you can support English, German and Italian in
+one Windows codepage. A better recommendation would be to use n
+columns for user provided data which is unconstrained and varchar for
+columns which are constrained which you control like a number plate,
+serial number.
+
 However, in the spirit of describing why let's look at some examples.
 These examples assume we are now using a DBD::ODBC built using the
 Unicode API (see above) and you have a unicode aware ODBC driver.
@@ -534,5 +542,20 @@ bells and whistles:
 
   </code>
 
+=head2 The correct way to do Unicode with DBD::ODBC and SQL Server and why
 
+If you are on Windows or Unix (and build DBD::ODBC for unicode
+support) then your char, varchar, nchar and nvarchar columns should
+all be correct. Even when you use char and varchar which use a
+codepage, because DBD::ODBC asks for the data as SQL_WCHAR, SQL Server
+will convert any character in the codepage to a unicode codepoint and
+DBD::ODBC will encode them as UTF-8 and mark them unicode to Perl.
 
+Also, when inserting unicode, DBD::ODBC will normally just do the
+right thing i.e., use SQL_WCHAR for nchar/nvarchar columns, but if you
+column is a char/varchar it cannot know if you really want to attempt
+to insert unicode or just characters/bytes in the SQL Server codepage
+(it could look at the perl scalars you are trying to insert and make a
+guess based on whether the utf8 flag is on or not but that is likely
+to break quite a lot of older scripts).  See the example above for
+inserting into varchar columns.
