@@ -559,3 +559,117 @@ to insert unicode or just characters/bytes in the SQL Server codepage
 guess based on whether the utf8 flag is on or not but that is likely
 to break quite a lot of older scripts).  See the example above for
 inserting into varchar columns.
+
+=head3 Surrogate pairs (or unicode code points above U+FFFF)
+
+ODBC supports Unicode in the form of SQL_WCHAR types and Unicode
+versions of the ODBC API. The encoding form that ODBC expects for data
+used with Unicode API functions is UCS-2 (or at least that how it
+looked when Windows and MS SQL Server was using UCS-2).
+
+In anticipation of things changing, when unicode support was added to
+DBD::ODBC the internal code actually converts Perl UTF-8 encoded
+strings into UTF-16 which for characters in the Basic Multilingual
+Plane is identical to UCS-2. As there were no unicode drivers
+supporting supplemental characters (above U+0FFFF) this could not be
+proven as good decision however, at worst it meant code using unicode
+outside the basic multingual plane would just insert what looked to
+the database as more characters.
+
+=head4 Older versions of MS SQL Server and surrogate pairs
+
+As it turned out the decision in DBD::ODBC to use UTF-16 was exactly
+what MS initially did and versions of MS SQL Server like 2000, 2005
+and 2008 are described as surrogate neutral rather than surrogate
+aware. MS had this to say at the time:
+
+I<Both SQL Server 2000 and SQL Server 2005 can store surrogate pairs,
+even though UCS-2 is not aware of surrogates. SQL Server treats the
+surrogate pairs as two undefined Unicode characters rather than as a
+single character. Such applications are usually referred to as
+surrogate-neutral or surrogate-safe, meaning that there is no
+intrinsic ability to interact with the data, but at least the data can
+be stored without loss.>
+
+However, there are a few things you should be aware of when using
+these older MS SQL Server versions that are only surrogate-neutral:
+
+o for each surrogate inserted you'll need 1 extra character in the column e.g., inserting 3 surrogate pairs
+into a nvarchar requires an nvarchar(6), not an nvarchar(3).
+
+o string operations are not aware of supplementary characters. So, watch out if you are
+using substring or len functions in SQL.
+
+o Sorting and searching behavior for supplementary characters may
+change depending on the collation
+
+=head4 Newer versions of MS SQL Server and surrogate pairs
+
+Newer versions of SQL Server (2012 and later, version >= 11) support surrogate pairs
+but you must set the collation to a one ending in "_SC" e.g., Latin1_General_100_CI_AS_SC. When
+you do this string functions will recognise surrogate pairs and all of the problems listed above
+for older SQL Servers are fixed.
+
+=head4 Is my SQL Server surrogate-neutral or surrogate-aware?
+
+Here is a small script you can use to test whether your SQL Server is surrogate-neutral
+or surrogate-aware:
+
+  <code>
+  # Test to see if your SQL Server is surrogate-aware or just surrogate-neutral
+  use 5.008.001;
+  use strict;
+  use DBI qw(:utils);
+
+  my $h = DBI->connect() or die $DBI::errstr;
+  $h->{PrintError} = 0;
+
+  eval {$h->do(q/drop table surrogate_pairs/)};
+
+  # It is possible to set the collation at instance or database level.
+  # Set it on the column to make sure that, initially, we are using a
+  # non supplementary character collation.
+  $h->do(q/create table surrogate_pairs (a nvarchar(20) collate Latin1_General_100_CI_AI)/);
+
+  my $insert = $h->prepare(q/insert into surrogate_pairs values(?)/);
+
+  # Insert test supplementary character
+  print "Inserting unicode character U+2070E into db\n";
+  $insert->execute("\x{2070E}");
+
+  # now read it back and see what we get
+  print "\nNote when we select this character back it is still 1 unicode character and 4 bytes and the ord is correct at 0x2070E. This is because DBD::ODBC received a buffer of SQL_WCHAR chrs back from SQL Server which it then decoded as UTF-16 which recognises the surrogate pair. This is why SQL Server using this collation (or older SQL Servers) are known as surrogate-neutral.\n";
+  my $r = $h->selectrow_arrayref(q/select a from surrogate_pairs/);
+  print data_string_desc($r->[0]), "\n";
+  print "ord(chr): ", sprintf("0x%x", ord($r->[0])), "\n";
+
+  # This is a non _SC collation, so the length function returns "2".
+  print "\nNote in the following that len(a) returns 2 not 1 as SQL Server has not recognised this as a surrogate pair.\n";
+  $r = $h->selectrow_arrayref(q/select len(a) from surrogate_pairs/);
+  print "length in database is: ", $r->[0], "\n";
+
+  # now try and alter the table to change the collation to Latin1_General_100_CI_AS_SC
+  # which only later SQL Servers (>= version 11, i.e., 2012) can do.
+  # Unfortunately older SQL Servers don't error if you try and change the collation
+  # to one it does not support so we cannot test by just trying to change to a
+  # surrogate aware collation.
+  $h->do(q/alter table surrogate_pairs alter column a nchar(20) collate Latin1_General_100_CI_AS_SC/);
+
+  $r = $h->selectrow_arrayref(q/SELECT SERVERPROPERTY('ProductVersion')/);
+  my $version = $r->[0];
+  print "\nYou SQL Server is version: $version\n\n";
+
+  if (split(/\./, $version)->[0] >= 11) {
+      print "Your SQL Server is surrogate-aware\n";
+      $r = $h->selectrow_arrayref(q/select a from surrogate_pairs/);
+      print data_string_desc($r->[0]), "\n";
+      print "ord(chr): ", sprintf("0x%x", ord($r->[0])), "\n";
+
+      print "\nNote in the following that len(a) returns 1 as SQL Server in this collation recognises surrogate pairs\n";
+      $r = $h->selectrow_arrayref(q/select len(a) from surrogate_pairs/);
+      print "length in database is: ", $r->[0], "\n";
+  } else {
+      print "You SQL Server is surrogate-neutral but not surrogate-aware\n";
+  }
+  $h->disconnect;
+  </code>
