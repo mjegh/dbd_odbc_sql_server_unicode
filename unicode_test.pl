@@ -1,7 +1,7 @@
 # This is some test code I'm currently using to validate DBD::ODBC's
 # unicode support
 
-use 5.014;
+use 5.010;
 use strict;
 use warnings;
 use DBI qw(:utils :sql_types);
@@ -16,15 +16,16 @@ sub show_it {
     my $h = shift;
 
     say "  OUTPUT:";
-    my $r = $h->selectrow_arrayref(q/select len(a), a from test/);
+    my $r = $h->selectrow_arrayref(q/select len(a), a from unicode_test/);
     say "    database character length: ", $r->[0];
     say "    data_string_desc of output string: ", data_string_desc($r->[1]);
+    say "    length in perl: ", length($r->[1]);
     print "    ords of output string:";
     foreach my $s(split(//, $r->[1])) {
         print sprintf("%x", ord($s)), ",";
     }
     print "\n";
-    $h->do(q/delete from test/);
+    $h->do(q/delete from unicode_test/);
 }
 
 sub execute {
@@ -60,6 +61,9 @@ sub set_codepage {
     # get active codepage and ensure it is cp1252
     # http://stackoverflow.com/questions/1259084/what-encoding-code-page-is-cmd-exe-using
     Win32::API::More->Import("kernel32", "UINT GetConsoleOutputCP()");
+    Win32::API::More->Import("kernel32", "UINT GetACP()");
+    my $acp = GetACP();
+    print "acp: $acp\n";
     my $cp = GetConsoleOutputCP();
     print "Current active console code page: $cp\n";
     if ($cp != 1252) {
@@ -78,12 +82,13 @@ if ($^O eq 'MSWin32') {
 my $h = DBI->connect();
 say "DBD::ODBC build for unicode:", $h->{odbc_has_unicode};
 say "Output connstr: ", $h->{odbc_out_connect_string};
+die "Please use a unicode build of DBD::ODBC" if !$h->{odbc_has_unicode};
 
 my $s;
-my $sql = q/insert into test (a) values(?)/;
+my $sql = q/insert into unicode_test (a) values(?)/;
 
-eval {$h->do(q/drop table test/)};
-$h->do(q/create table test (a varchar(100) collate Latin1_General_CI_AS)/);
+eval {$h->do(q/drop table unicode_test/)};
+$h->do(q/create table unicode_test (a varchar(100) collate Latin1_General_CI_AS)/);
 
 # a simple unicode string
 my $euro = "\x{20ac}\x{a3}";
