@@ -473,12 +473,23 @@ character 82 in Windows-1252 character-set (which I was using when
 running this code) is "curved quotes" with unicode value 0x201A. 0xe2
 and 0xac in windows-1252 are the same character code in unicode.
 
-In the second row we bound the data as SQL_WCHAR for insert and
-SQL_WCHAR for select B<and> the characters is in windows-1252 so we
-got back what we inserted. However, had we tried to insert a character
-not in the windows-1252 codepage SQL Server would substitute that
-character with a '?'. We should not have had to override the bind type
-here and that was the bug in DBD::ODBC pre 1.46_1.
+In the second row we bound the data as SQL_WCHAR for insert (and the
+database maps those unicode characters to the codepage for the table)
+and we bind as SQL_WCHAR for select. The driver maps the codepage characters
+retrieved back to unicode and we get back what we inserted (so long as all
+the characters we inserted fit in the current codepage). However, had we tried to
+insert a character not in the windows-1252 codepage SQL Server would
+substitute that character with a '?'. We should not have had to
+override the bind type here and that was the bug in DBD::ODBC pre
+1.46_1.
+
+This last point is really important. On Windows, the driver knows your
+code page and can do this but on Unix it is not uncommon for you to
+have to tell the driver what codepage you want to use for the
+conversion. e.g., with the Easysoft SQL Server ODBC Driver you could
+set "Client_cset = WINDOWS=1252" or you could add "use_lcid=Yes" in
+your connection and the driver will work out the correct codepage for
+you.
 
 Here is a Windows specific version of the above test with a few more
 bells and whistles:
