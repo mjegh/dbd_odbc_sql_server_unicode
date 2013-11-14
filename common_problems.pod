@@ -565,21 +565,20 @@ bells and whistles:
 
 =head2 The correct way to do Unicode with DBD::ODBC and SQL Server and why
 
-If you are on Windows or Unix (and build DBD::ODBC for unicode
-support) then your char, varchar, nchar and nvarchar columns should
-all be correct. Even when you use char and varchar which use a
+When retrieving rows on Windows or Unix (and DBD::ODBC built for
+unicode support) then your char, varchar, nchar and nvarchar columns
+should all be correct. Even when you use char and varchar which use a
 codepage, because DBD::ODBC asks for the data as SQL_WCHAR, SQL Server
 will convert any character in the codepage to a unicode codepoint and
 DBD::ODBC will encode them as UTF-8 and mark them unicode to Perl.
 
-Also, when inserting unicode, DBD::ODBC will normally just do the
-right thing i.e., use SQL_WCHAR for nchar/nvarchar columns, but if you
-column is a char/varchar it cannot know if you really want to attempt
-to insert unicode or just characters/bytes in the SQL Server codepage
-(it could look at the perl scalars you are trying to insert and make a
-guess based on whether the utf8 flag is on or not but that is likely
-to break quite a lot of older scripts).  See the example above for
-inserting into varchar columns.
+When inserting unicode, DBD::ODBC will normally just do the right
+thing i.e., use SQL_WCHAR for nchar/nvarchar columns, but if you
+column is a char/varchar then prior to 1.46_1 it may do the wrong
+thing by default. Until 1.46_1 DBD::ODBC ignored your perl data and
+bound it as the type the driver reported for the parameter and in
+1.46_1 and beyond DBD::ODBC looks at your scalar for the parameter
+first to see it has the utf8 flag on it.
 
 =head3 Surrogate pairs (or unicode code points above U+FFFF)
 
@@ -615,26 +614,28 @@ be stored without loss.>
 However, there are a few things you should be aware of when using
 these older MS SQL Server versions that are only surrogate-neutral:
 
-o for each surrogate inserted you'll need 1 extra character in the column e.g., inserting 3 surrogate pairs
-into a nvarchar requires an nvarchar(6), not an nvarchar(3).
+o for each surrogate inserted you'll need 1 extra character in the
+column e.g., inserting 3 surrogate pairs into a nvarchar requires an
+nvarchar(6), not an nvarchar(3).
 
-o string operations are not aware of supplementary characters. So, watch out if you are
-using substring or len functions in SQL.
+o string operations are not aware of supplementary characters. So,
+watch out if you are using substring or len functions in SQL.
 
 o Sorting and searching behavior for supplementary characters may
 change depending on the collation
 
 =head4 Newer versions of MS SQL Server and surrogate pairs
 
-Newer versions of SQL Server (2012 and later, version >= 11) support surrogate pairs
-but you must set the collation to a one ending in "_SC" e.g., Latin1_General_100_CI_AS_SC. When
-you do this string functions will recognise surrogate pairs and all of the problems listed above
-for older SQL Servers are fixed.
+Newer versions of SQL Server (2012 and later, version >= 11) support
+surrogate pairs but you must set the collation to a one ending in
+"_SC" e.g., Latin1_General_100_CI_AS_SC. When you do this string
+functions will recognise surrogate pairs and all of the problems
+listed above for older SQL Servers are fixed.
 
 =head4 Is my SQL Server surrogate-neutral or surrogate-aware?
 
-Here is a small script you can use to test whether your SQL Server is surrogate-neutral
-or surrogate-aware:
+Here is a small script you can use to test whether your SQL Server is
+surrogate-neutral or surrogate-aware:
 
   <code>
   # Test to see if your SQL Server is surrogate-aware or just surrogate-neutral
@@ -680,7 +681,7 @@ or surrogate-aware:
   my $version = $r->[0];
   print "\nYou SQL Server is version: $version\n\n";
 
-  if (split(/\./, $version)->[0] >= 11) {
+  if ((split(/\./, $version))[0] >= 11) {
       print "Your SQL Server is surrogate-aware\n";
       $r = $h->selectrow_arrayref(q/select a from surrogate_pairs/);
       print data_string_desc($r->[0]), "\n";
