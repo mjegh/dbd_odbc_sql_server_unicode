@@ -41,7 +41,7 @@ $r = $h->selectrow_arrayref(q/SELECT SERVERPROPERTY('ProductVersion')/);
 my $version = $r->[0];
 print "\nYou SQL Server is version: $version\n\n";
 
- if (split(/\./, $version)->[0] >= 11) {
+ if ((split(/\./, $version))[0] >= 11) {
     print "Your SQL Server is surrogate-aware\n";
     $r = $h->selectrow_arrayref(q/select a from surrogate_pairs/);
     print data_string_desc($r->[0]), "\n";
