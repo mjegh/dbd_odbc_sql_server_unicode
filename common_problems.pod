@@ -27,6 +27,11 @@ but now does if you use the correct collation.
 
 =back
 
+In writing this I discovered a bug in DBD::ODBC (when inserting into
+char/varchar columns) which affects all versions from when unicode was
+introduced up until 1.46_1 when it was fixed. I've tried to highlight
+the issue in the following examples.
+
 =head2 Terminolgy
 
 In this document I repeatedly use some terminolgy which needs further
@@ -53,9 +58,9 @@ The ODBC wide APIs are those called SQLxxxW e.g., SQLDriverConnectW. Any
 string arguments to wide APIs expect UCS-2 (normally and sometimes
 UTF-16).
 
-=item SQL_WCHAR and SQL_VARWCHAR
+=item SQL_WCHAR and SQL_WVARCHAR
 
-SQL_WCHAR and SQL_VARWCHAR are actually macros in the C ODBC API which
+SQL_WCHAR and SQL_WVARCHAR are actually macros in the C ODBC API which
 are assigned numbers and passed into some ODBC APIs to tell the
 ODBC driver to return L</Wide characters>.
 
@@ -141,8 +146,8 @@ as does the Microsoft ODBC driver.
 
 =item odbc_has_unicode
 
-For DBD::ODBC you need to get a connection established to MS SQL
-Server and then you can test the odbc_has_unicode attribute:
+For DBD::ODBC you need to get a connection established to your database
+and then you can test the odbc_has_unicode attribute:
 
   perl -MDBI -le 'my $h = DBI->connect; print $h->{odbc_has_unicode};'
 
@@ -179,6 +184,7 @@ simplistic and it is worth looking at some examples.
 ex1 Simple insert/select with non-unicode built DBD::ODBC
 
   <code>
+  # ex1.pl
   use 5.008001;
   use strict;
   use warnings;
@@ -194,8 +200,8 @@ ex1 Simple insert/select with non-unicode built DBD::ODBC
   my $s = $h->prepare(q/insert into unicode_test (a) values(?)/);
   $s->execute($unicode);
 
-  my $r = $h->selectall_arrayref(q/select a from unicode_test/);
-  my $data = $r->[0][0];
+  my $r = $h->selectrow_arrayref(q/select a from unicode_test/);
+  my $data = $r->[0];
   print "DBI describes data as: ", data_string_desc($data), "\n";
   print "Data Length: ", length($data), "\n";
   print "hex ords: ";
@@ -216,7 +222,7 @@ which outputs:
 and as you can see we attempted to insert a unicode Euro symbol and
 when we seleted it back we got 3 characters and 3 bytes instead of 1
 character and 3 bytes and it is confirmed by the fact the Perl data
-contains a UTF-8 encoded Euro.
+contains the UTF-8 encoding for a Euro.
 
 An explanation of what happended above:
 
@@ -271,8 +277,8 @@ bind_param call and import :sql_types from DBI.
   $s->bind_param(1, undef, {TYPE => SQL_WVARCHAR});
   $s->execute($unicode);
 
-  my $r = $h->selectall_arrayref(q/select a from unicode_test/);
-  my $data = $r->[0][0];
+  my $r = $h->selectrow_arrayref(q/select a from unicode_test/);
+  my $data = $r->[0];
   print "DBI describes data as: ", data_string_desc($data), "\n";
   print "Data Length: ", length($data), "\n";
   print "hex ords: ";
@@ -301,9 +307,10 @@ want to read it using a non-unicode built DBD::ODBC?
 
 ex3. Reading unicode from non unicode built DBD::ODBC
 
-We've got a valid unicode Euro symbol in the database (don't worry about how
-for now this is just showing what happens when the data in the database
-is correct but you use the wrong method to get it).
+We've got a valid unicode Euro symbol in the database in an nvarchar
+column (don't worry about how for now this is just showing what
+happens when the data in the database is correct but you use the wrong
+method to get it).
 
   <code>
   use 5.008001;
@@ -315,8 +322,8 @@ is correct but you use the wrong method to get it).
   my $h = DBI->connect or die $DBI::errstr;
   $h->{RaiseError} = 1;
 
-  my $r = $h->selectall_arrayref(q/select a from unicode_test/);
-  my $data = $r->[0][0];
+  my $r = $h->selectrow_arrayref(q/select a from unicode_test/);
+  my $data = $r->[0];
   print "DBI describes data as: ", data_string_desc($data), "\n";
   print "Data Length: ", length($data), "\n";
   print "hex ords: ";
@@ -331,7 +338,7 @@ which outputs:
   <output>
   DBI describes data as: UTF8 off, non-ASCII, 1 characters 1 bytes
   Data Length: 1
-  hex ords: 80,
+  hex ords: 80
   </output>
 
 To be honest, what you get back in data here very much depends on the
@@ -368,13 +375,17 @@ choice.
 
 You might be saying to yourself, yes but you can set a type in the
 bind_col method so you can control how the data is returned to
-you. Mostly that is not true for just about all Perl DBDs I know but
-with DBD::ODBC you can override the default type in a bind_col call
-but only if it is a decimal or a timestamp.
+you. Mostly that is not true for just about all Perl DBDs I know and
+with DBD::ODBC although you can override the default type in a
+bind_col call you can only do it for decimals and timestamps.
 
 =head2 Using varchar columns instead of nvarchar columns for unicode data
 
-Don't do this.
+If you are using DBD::ODBC before 1.46_1 don't do this. There is a bug
+in DBD::ODBC before 1.46_1 which means it does not look at the
+Perl scalars you are binding for input and it always binds them using
+the type the driver describes the column as (which will always be
+SQL_CHAR for a varchar column).
 
 Generally speaking you should use nchar/nvarchar when you need to
 support multiple languages in the same column although even that isn't
@@ -389,7 +400,8 @@ These examples assume we are now using a DBD::ODBC built using the
 Unicode API (see above) and you have a unicode aware ODBC driver.
 
 So we return to our first simple example but now run it with a
-unicode built DBD::ODBC:
+unicode built DBD::ODBC, use a varchar column and try 2 different
+bind types (the default and an overriden one):
 
 ex4. Simple insert/select with unicode built DBD::ODBC but using varchar
 
@@ -439,25 +451,34 @@ Here again, you'll get different results depending on platform and
 driver.
 
 I imagine this is really going to make you wonder what on earth has
-happened here. In Perl, the euro is internally encoded as UTF-8 as
-0xe2,0x82,0xac. DBD::ODBC was told the column is SQL_CHAR but because
-this is a unicode build it bound the columns as SQL_WCHAR. As far as
-MS SQL Server is concerned this is a varchar column, you wanted to
-insert 3 characters of codes 0xe2, 0x82 and 0xac and it is confirmed
-that this is what is in the database when we read them back as binary
-data. However, where did character with code 0x201a come from. When
-DBD::ODBC read the data back it bound the column as SQL_C_WCHAR and
-hence asked SQL Server to convert the characters in the varchar column
-to wide (UCS2 or UTF16) characters and guess what, character 82 in
-Windows-1252 character-set (which I was using when running this code)
-is "curved quotes" with unicode value 0x201A. 0xe2 and 0xac in
-windows-1252 are the same character code in unicode.
+happened here. Bear in mind, in Perl, the euro is internally encoded
+in UTF-8 as 0xe2,0x82,0xac.
+
+In the first insert, DBD::ODBC does what it always did and asked the
+database what the column type was, the database returned SQL_CHAR and
+the Euro was bound as a SQL_CHAR (the bug). In the second case we
+overrode DBD::ODBC and told it to bind the data as SQL_WVARCHAR.
+
+When we retrieved the data, DBD::ODBC bound the column as SQL_WCHAR
+(which it always does in an unicode build).
+
+As far as MS SQL Server is concerned this is a varchar column, you
+wanted to insert 3 characters of codes 0xe2, 0x82 and 0xac and it is
+confirmed that this is what is in the database when we read them back
+as binary data. However, where did character with code 0x201a come
+from. When DBD::ODBC read the data back it bound the column as
+SQL_C_WCHAR and hence asked SQL Server to convert the characters in
+the varchar column to wide (UCS2 or UTF16) characters and guess what,
+character 82 in Windows-1252 character-set (which I was using when
+running this code) is "curved quotes" with unicode value 0x201A. 0xe2
+and 0xac in windows-1252 are the same character code in unicode.
 
 In the second row we bound the data as SQL_WCHAR for insert and
 SQL_WCHAR for select B<and> the characters is in windows-1252 so we
 got back what we inserted. However, had we tried to insert a character
 not in the windows-1252 codepage SQL Server would substitute that
-characters with a '?'.
+character with a '?'. We should not have had to override the bind type
+here and that was the bug in DBD::ODBC pre 1.46_1.
 
 Here is a Windows specific version of the above test with a few more
 bells and whistles:
